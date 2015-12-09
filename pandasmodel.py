@@ -226,6 +226,29 @@ class HierarchicalHeaderView(QHeaderView):
         self.setClickable(self.options.get("clickable"))
         self.show() #force to be visible
         getattr(parent, "set%sHeader"%("Horizontal", "Vertical")[orientation!=Qt.Horizontal])(self)
+        self.sectionMoved.connect(self.on_sectionMoved)
+        
+    def on_sectionMoved(self, logicalIndex, oldVisualIndex, newVisualIndex):
+        view, model = self.parent(), self.parent().model()
+        if not hasattr(model, "reorder"):
+            return #reorder underlying data of models with /reorder/ def only
+        if getattr(self, "manual_move", False):
+            self.manual_move=False
+            return
+        self.manual_move=True
+        self.moveSection(newVisualIndex, oldVisualIndex) #cancel move
+        if model.reorder(oldVisualIndex, newVisualIndex, self.orientation()):
+            #Reorder column widths / row heights
+            horizontal = self.orientation()==Qt.Horizontal
+            itemSize = (view.rowHeight, view.columnWidth)[horizontal]
+            setItemSize = (view.setRowHeight, view.setColumnWidth)[horizontal]
+            selectItem = getattr(view, "select"+("Row", "Column")[horizontal])
+            rng = sorted((oldVisualIndex, newVisualIndex))
+            widths = [itemSize(i) for i in range(rng[0], rng[1]+1)]
+            widths.insert(newVisualIndex-rng[0], widths.pop(oldVisualIndex-rng[0]))
+            for i, col in enumerate(range(rng[0], rng[1]+1)):
+                setItemSize(col, widths[i])
+            selectItem(newVisualIndex)
         
     def styleOptionForCell(self, logicalInd: int)->QStyleOptionHeader:
         opt = QStyleOptionHeader()
@@ -348,6 +371,7 @@ class DataFrameModel(QtCore.QAbstractTableModel):
         
     def setDataFrame(self, dataframe):
         self.df = dataframe.copy()
+#        self.df_full = self.df
         self.layoutChanged.emit()
  
     def rowCount(self, parent):
@@ -394,6 +418,17 @@ class DataFrameModel(QtCore.QAbstractTableModel):
             hm.appendRow(self.readLevel(orient=role))
             return hm
             
+    def reorder(self, oldIndex, newIndex, orientation):
+        "Reorder columns / rows"
+        horizontal = orientation==Qt.Horizontal
+        cols = list(self.df.columns if horizontal else self.df.index)
+        cols.insert(newIndex, cols.pop(oldIndex))
+        self.setDataFrame(self.df[cols] if horizontal else self.df.T[cols].T)
+        return True
+            
+#    def filter(self, filt=None):            
+#        self.df = self.df_full if filt is None else self.df[filt]
+#        self.layoutChanged.emit()
         
     def headerData(self, section, orientation, role):
         if role != Qt.DisplayRole: return
@@ -426,6 +461,7 @@ if __name__=="__main__":
 #    oldh.setParent(form), oldv.setParent(form) #Save old headers for some reason
     MultiIndexHeaderView(Qt.Horizontal, view)
     MultiIndexHeaderView(Qt.Vertical, view)
+    view.horizontalHeader().setMovable(True) #reorder DataFrame columns manually
     
     #Set data
     view.setModel(DataFrameModel(df))    
