@@ -174,6 +174,8 @@ class HierarchicalHeaderView(QHeaderView):
                 if i<indexes.size()-1 and (realStyleOptions.state&QStyle.State_Sunken or realStyleOptions.state&QStyle.State_On):
                     t = QStyle.State(QStyle.State_Sunken | QStyle.State_On)
                     realStyleOptions.state = realStyleOptions.state&~t #FIXME: parent items are not highlighted
+                if i<indexes.size()-1: #Use sortIndicator for inner level only
+                    realStyleOptions.sortIndicator = False
 #                if i==0:
 #                    print(self.leafs(indexes[i]), leafIndex)
                 top=self.paintHorizontalCell(painter, hv, indexes[i], leafIndex, logicalLeafIndex, realStyleOptions, sectionRect, top)
@@ -242,17 +244,23 @@ class HierarchicalHeaderView(QHeaderView):
             horizontal = self.orientation()==Qt.Horizontal
             itemSize = (view.rowHeight, view.columnWidth)[horizontal]
             setItemSize = (view.setRowHeight, view.setColumnWidth)[horizontal]
-            selectItem = getattr(view, "select"+("Row", "Column")[horizontal])
             rng = sorted((oldVisualIndex, newVisualIndex))
-            widths = [itemSize(i) for i in range(rng[0], rng[1]+1)]
-            widths.insert(newVisualIndex-rng[0], widths.pop(oldVisualIndex-rng[0]))
+            options = [(itemSize(i), i) for i in range(rng[0], rng[1]+1)]
+            options.insert(newVisualIndex-rng[0], options.pop(oldVisualIndex-rng[0]))
             for i, col in enumerate(range(rng[0], rng[1]+1)):
-                setItemSize(col, widths[i])
-            selectItem(newVisualIndex)
+                setItemSize(col, options[i][0])
+            getattr(view, "select"+("Row", "Column")[horizontal])(newVisualIndex) #FIXME: don't select if sorting is enable?
+            if self.isSortIndicatorShown():
+                sortIndIndex = next((i for i, o in enumerate(options) if o[1]==self.sortIndicatorSection()), None)
+                if sortIndIndex is not None: #sort indicator is among sections being reordered
+                    self.setSortIndicator(sortIndIndex+rng[0], self.sortIndicatorOrder()) #FIXME: does unnecessary sorting
+            model.layoutChanged.emit() #update view
         
     def styleOptionForCell(self, logicalInd: int)->QStyleOptionHeader:
         opt = QStyleOptionHeader()
         self.initStyleOption(opt)
+        if self.isSortIndicatorShown() and self.sortIndicatorSection()==logicalInd:
+            opt.sortIndicator = (QStyleOptionHeader.SortUp, QStyleOptionHeader.SortDown)[self.sortIndicatorOrder()==Qt.AscendingOrder]
         if self.window().isActiveWindow():
             opt.state = opt.state|QStyle.State_Active
         opt.textAlignment = Qt.AlignCenter
@@ -423,7 +431,7 @@ class DataFrameModel(QtCore.QAbstractTableModel):
         horizontal = orientation==Qt.Horizontal
         cols = list(self.df.columns if horizontal else self.df.index)
         cols.insert(newIndex, cols.pop(oldIndex))
-        self.setDataFrame(self.df[cols] if horizontal else self.df.T[cols].T)
+        self.df = self.df[cols] if horizontal else self.df.T[cols].T
         return True
             
 #    def filter(self, filt=None):            
@@ -438,6 +446,13 @@ class DataFrameModel(QtCore.QAbstractTableModel):
             
     def dataFrame(self):
         return self.df
+        
+    def sort(self, column, order):
+#        print("sort", column, order) #FIXME: double sort after setSortingEnabled(True)
+        if len(self.df):
+            self.df.sort_values(self.df.columns[column],
+                                ascending=order==Qt.AscendingOrder, inplace=True)
+            self.layoutChanged.emit()
 
 if __name__=="__main__":
     import sys
@@ -467,6 +482,8 @@ if __name__=="__main__":
     view.setModel(DataFrameModel(df))    
     view.resizeColumnsToContents()
     view.resizeRowsToContents()
-
+    
+    #Set sorting enabled (after setting model)
+    view.setSortingEnabled(True)
     sys.exit(app.exec())
     
