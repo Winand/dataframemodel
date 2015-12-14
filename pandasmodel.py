@@ -8,6 +8,7 @@ from PyQt4 import QtGui, QtCore
 from PyQt4.QtCore import QAbstractItemModel, QModelIndex, QSize, QRect, Qt, QPoint
 from PyQt4.QtGui import QStyleOptionHeader, QHeaderView, QPainter, QWidget, QStyle, QMatrix, QFont, QFontMetrics, QPalette, QBrush, QColor
 import pandas as pd
+import datetime
 
 class QList(list):
     push_back = lambda self, v: self.append(v)
@@ -372,7 +373,8 @@ class HierarchicalHeaderView(QHeaderView):
 MultiIndexHeaderView=HierarchicalHeaderView
     
 class DataFrameModel(QtCore.QAbstractTableModel):
-    options = {"striped": True, "stripesColor": "#fafafa"}
+    #na_values:least|greatest - for sorting
+    options = {"striped": True, "stripesColor": "#fafafa", "na_values": "least"}
     def __init__(self, dataframe=None): 
         super().__init__()
         self.setDataFrame(dataframe if dataframe is not None else pd.DataFrame())
@@ -413,14 +415,19 @@ class DataFrameModel(QtCore.QAbstractTableModel):
         row, col = index.row(), index.column()
         if role in (Qt.DisplayRole, Qt.ToolTipRole):
             ret = self.df.iat[row, col]
-            if ret is not None and not ret!=ret: #convert to str except for None, NaN, NaT
-                ret = str(ret)
+            if ret is not None and ret==ret: #convert to str except for None, NaN, NaT
+                if isinstance(ret, float):
+                    ret = "{:n}".format(ret)
+                elif isinstance(ret, datetime.date):
+                    #FIXME: show microseconds optionally
+                    ret = ret.strftime(("%x", "%c")[isinstance(ret, datetime.datetime)])
+                else: ret = str(ret)
                 if role == Qt.ToolTipRole:
                     if len(ret) <= 20: ret = ""
-            return ret
+                return ret
         elif role == Qt.BackgroundRole:
-            if self.options.get("striped"):
-                return QBrush(QColor(self.options.get("stripesColor"))) if row%2 else None
+            if self.options["striped"] and row%2:
+                return QBrush(QColor(self.options["stripesColor"]))
         elif role in (HorizontalHeaderDataRole, VerticalHeaderDataRole):
             hm = QtGui.QStandardItemModel()
             hm.appendRow(self.readLevel(orient=role))
@@ -450,12 +457,15 @@ class DataFrameModel(QtCore.QAbstractTableModel):
     def sort(self, column, order):
 #        print("sort", column, order) #FIXME: double sort after setSortingEnabled(True)
         if len(self.df):
-            self.df.sort_values(self.df.columns[column],
-                                ascending=order==Qt.AscendingOrder, inplace=True)
+            asc = order==Qt.AscendingOrder
+            na_pos = 'first' if (self.options["na_values"]=="least")==asc else 'last'
+            self.df.sort_values(self.df.columns[column], ascending=asc,
+                                inplace=True, na_position=na_pos)
             self.layoutChanged.emit()
 
 if __name__=="__main__":
-    import sys
+    import sys, locale
+    locale.setlocale(locale.LC_ALL, '') #system locale settings
     app = QtGui.QApplication(sys.argv)
     form = QtGui.QWidget()
     form.setAttribute(Qt.WA_DeleteOnClose) #http://stackoverflow.com/a/27178019/1119602
