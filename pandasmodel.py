@@ -374,7 +374,8 @@ MultiIndexHeaderView=HierarchicalHeaderView
     
 class DataFrameModel(QtCore.QAbstractTableModel):
     #na_values:least|greatest - for sorting
-    options = {"striped": True, "stripesColor": "#fafafa", "na_values": "least"}
+    options = {"striped": True, "stripesColor": "#fafafa", "na_values": "least",
+               "tooltip_min_len": 21}
     def __init__(self, dataframe=None): 
         super().__init__()
         self.setDataFrame(dataframe if dataframe is not None else pd.DataFrame())
@@ -423,7 +424,7 @@ class DataFrameModel(QtCore.QAbstractTableModel):
                     ret = ret.strftime(("%x", "%c")[isinstance(ret, datetime.datetime)])
                 else: ret = str(ret)
                 if role == Qt.ToolTipRole:
-                    if len(ret) <= 20: ret = ""
+                    if len(ret)<self.options["tooltip_min_len"]: ret = ""
                 return ret
         elif role == Qt.BackgroundRole:
             if self.options["striped"] and row%2:
