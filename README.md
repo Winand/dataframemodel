@@ -8,7 +8,7 @@ The project uses Python port of [HierarchicalHeaderView](http://qt-apps.org/cont
 
 MIT License
 
-Copyright (c) [year] [fullname]
+Copyright (c) 2016 Makarov Andrey
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
